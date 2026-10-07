@@ -1,0 +1,156 @@
+"""
+image_viewer.py
+Widget penampil citra kamera/foto dengan rendering cepat QPixmap,
+penyesuaian rasio aspek otomatis, dan penangkapan interaksi klik kursor.
+"""
+
+from typing import Optional, Tuple
+import numpy as np
+import cv2
+from PyQt5.QtWidgets import QLabel, QSizePolicy
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QFont
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QRect
+
+
+class InteractiveImageViewer(QLabel):
+    """
+    Widget penampil citra berbasis QLabel dengan penskalaan aspek rasio
+    dan penangkapan koordinat klik pengguna pada citra asli.
+    """
+    pixel_clicked = pyqtSignal(int, int)  # Emits (x, y) dalam koordinat citra asli
+    mouse_moved = pyqtSignal(int, int)
+
+    def __init__(self, parent=None, placeholder_text="Kamera belum aktif"):
+        super().__init__(parent)
+        self.placeholder_text = placeholder_text
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumSize(320, 200)
+        self.setStyleSheet("""
+            QLabel {
+                background-color: #0d0f12;
+                border: 1px solid #252b36;
+                border-radius: 6px;
+            }
+        """)
+
+        self._cv_image = None
+        self._pixmap = None
+        self._last_rendered_rect = QRect()
+        self.show_crosshair = False
+        self.crosshair_is_locked = False
+        self.setMouseTracking(True)
+
+    def set_crosshair(self, show: bool, is_locked: bool = False):
+        """Mengatur tampilan crosshair bidikan pada tengah viewport."""
+        self.show_crosshair = show
+        self.crosshair_is_locked = is_locked
+        self.update()
+
+    def set_cv_image(self, bgr_image: Optional[np.ndarray]):
+        """Menampilkan citra OpenCV format BGR."""
+        if bgr_image is None or bgr_image.size == 0:
+            self._cv_image = None
+            self._pixmap = None
+            self.update()
+            return
+
+        self._cv_image = bgr_image
+        h, w, ch = bgr_image.shape
+        bytes_per_line = ch * w
+        # Konversi BGR OpenCV ke RGB QImage
+        rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
+        q_img = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        self._pixmap = QPixmap.fromImage(q_img)
+        self.update()
+
+    def get_cv_image(self) -> Optional[np.ndarray]:
+        """Mengambil frame OpenCV aktif."""
+        return self._cv_image.copy() if self._cv_image is not None else None
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        # Latar belakang gelap
+        painter.fillRect(self.rect(), QColor("#0d0f12"))
+
+        if self._pixmap is None or self._pixmap.isNull():
+            # Tampilkan placeholder
+            painter.setPen(QColor("#546070"))
+            font = QFont("Segoe UI", 10)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(self.rect(), Qt.AlignCenter, self.placeholder_text)
+            return
+
+        # Skala pixmap mempertahankan aspek rasio (KeepAspectRatio)
+        scaled_pixmap = self._pixmap.scaled(
+            self.size(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+
+        # Posisi tengah
+        x = (self.width() - scaled_pixmap.width()) // 2
+        y = (self.height() - scaled_pixmap.height()) // 2
+        self._last_rendered_rect = QRect(x, y, scaled_pixmap.width(), scaled_pixmap.height())
+
+        painter.drawPixmap(x, y, scaled_pixmap)
+
+        # Gambar Crosshair Overlay di Tengah Viewport jika aktif
+        if self.show_crosshair:
+            center_x = self.width() // 2
+            center_y = self.height() // 2
+            radius = 24
+            line_ext = 40
+
+            color = QColor("#10b981") if self.crosshair_is_locked else QColor("#38bdf8")
+            pen = painter.pen()
+            pen.setColor(color)
+            pen.setWidth(2)
+            painter.setPen(pen)
+
+            # Lingkaran bidikan tengah
+            painter.drawEllipse(center_x - radius, center_y - radius, radius * 2, radius * 2)
+
+            # Garis silang bidikan
+            painter.drawLine(center_x - line_ext, center_y, center_x - radius, center_y)
+            painter.drawLine(center_x + radius, center_y, center_x + line_ext, center_y)
+            painter.drawLine(center_x, center_y - line_ext, center_x, center_y - radius)
+            painter.drawLine(center_x, center_y + radius, center_x, center_y + line_ext)
+
+            # Titik pusat
+            painter.setBrush(color)
+            painter.drawEllipse(center_x - 3, center_y - 3, 6, 6)
+
+    def _map_widget_to_image_coords(self, pos: QPoint) -> Optional[Tuple[int, int]]:
+        """Mengonversi posisi mouse pada widget ke koordinat piksel citra asli."""
+        if self._cv_image is None or not self._last_rendered_rect.contains(pos):
+            return None
+
+        orig_h, orig_w = self._cv_image.shape[:2]
+        rel_x = pos.x() - self._last_rendered_rect.x()
+        rel_y = pos.y() - self._last_rendered_rect.y()
+
+        img_x = int(rel_x * (orig_w / self._last_rendered_rect.width()))
+        img_y = int(rel_y * (orig_h / self._last_rendered_rect.height()))
+
+        img_x = max(0, min(orig_w - 1, img_x))
+        img_y = max(0, min(orig_h - 1, img_y))
+
+        return img_x, img_y
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            coords = self._map_widget_to_image_coords(event.pos())
+            if coords is not None:
+                self.pixel_clicked.emit(coords[0], coords[1])
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        coords = self._map_widget_to_image_coords(event.pos())
+        if coords is not None:
+            self.mouse_moved.emit(coords[0], coords[1])
+        super().mouseMoveEvent(event)

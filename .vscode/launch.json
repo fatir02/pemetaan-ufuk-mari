@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Jalankan Pemetaan Ufuk Mar'i",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pemetaan-ufuk-mari/main.py",
+            "cwd": "${workspaceFolder}/pemetaan-ufuk-mari",
+            "console": "integratedTerminal"
+        }
+    ]
+}
