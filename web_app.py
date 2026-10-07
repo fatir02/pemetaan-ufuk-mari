@@ -5,7 +5,8 @@ Fitur Unggulan Mobile:
 - Pilihan Ambil Gambar: Galeri HP, Kamera Native, dan Kamera Live Viewfinder
 - Kamera Live dengan Garis Bantu Deteksi Ufuk Astronomi (Ufuk Hakiki 0°, Ufuk Laut Dip, Salib Sumbu Optik & Sensor Kemiringan)
 - Pemrosesan Kontur Ufuk OpenCV Multi-Spektral Presisi Tinggi
-- Menu Preview Laporan PDF Interaktif dengan Zoom (50% - 250%) dan Scroll Sentuh Halus
+- Form Evaluasi Lapangan & Penerbitan Dokumen (Sesuai Standar Berita Acara Falak)
+- Menu Preview Laporan PDF Interaktif seperti Dokumen Viewer dengan Zoom Manual (Pinch-to-zoom & Slider) dan Scroll
 """
 
 import os
@@ -42,7 +43,7 @@ HTML_TEMPLATE = """
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pemetaan Ufuk Mar'i - Web Mobile Falak</title>
+  <title>Pemetaan Ufuk Mar'i - Falak Digital</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: #0b0f17; color: #e2e8f0; padding-bottom: 60px; }
@@ -54,11 +55,12 @@ HTML_TEMPLATE = """
     .card-title { font-size: 0.95rem; font-weight: 700; color: #38bdf8; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
     .form-group { margin-bottom: 12px; }
     label { display: block; font-size: 0.78rem; color: #94a3b8; margin-bottom: 5px; font-weight: 600; }
-    input[type="number"], input[type="text"], select {
+    input[type="number"], input[type="text"], select, textarea {
       width: 100%; background-color: #1a2436; border: 1px solid #334155; border-radius: 8px; color: #ffffff;
-      padding: 10px 12px; font-size: 0.9rem; outline: none;
+      padding: 10px 12px; font-size: 0.88rem; outline: none; font-family: inherit;
     }
-    input:focus { border-color: #38bdf8; }
+    textarea { resize: vertical; line-height: 1.45; }
+    input:focus, textarea:focus { border-color: #38bdf8; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
     .grid-4 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
@@ -147,71 +149,82 @@ HTML_TEMPLATE = """
       cursor: pointer;
     }
 
-    /* Modal / Kotak Preview Laporan dengan Zoom & Scroll */
+    /* Modal / Viewer Dokumen PDF Laporan dengan Zoom Manual & Scroll */
     #reportPreviewModal {
       display: none;
-      margin-top: 16px;
-      background-color: #111726;
-      border: 1.5px solid #0284c7;
-      border-radius: 14px;
-      padding: 14px;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(5, 8, 14, 0.96);
+      z-index: 9999;
+      flex-direction: column;
+      backdrop-filter: blur(8px);
     }
-    .preview-toolbar {
+    .preview-doc-header {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      border-bottom: 1px solid #334155;
+      padding: 10px 14px;
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      background-color: #172033;
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin-bottom: 12px;
+      gap: 10px;
+      flex-wrap: wrap;
     }
-    .zoom-btn-group {
+    .preview-doc-header h2 {
+      font-size: 0.92rem;
+      color: #38bdf8;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .doc-toolbar {
       display: flex;
       align-items: center;
       gap: 6px;
+      flex-wrap: wrap;
     }
-    .zoom-btn {
-      background: #1e293b;
+    .doc-btn {
+      background-color: #1e293b;
       color: #e2e8f0;
       border: 1px solid #334155;
       border-radius: 6px;
       padding: 6px 10px;
+      font-size: 0.82rem;
       font-weight: bold;
-      font-size: 0.85rem;
       cursor: pointer;
     }
-    .zoom-btn:hover { background: #334155; color: #38bdf8; }
-    .preview-viewport {
-      width: 100%;
-      max-height: 72vh;
+    .doc-btn:hover { background-color: #334155; color: #38bdf8; }
+    .doc-viewport {
+      flex: 1;
       overflow: auto;
-      background-color: #070a10;
-      border: 1px solid #1e293b;
-      border-radius: 10px;
-      padding: 16px;
+      padding: 20px 12px;
       text-align: center;
-      touch-action: pan-x pan-y;
+      background-color: #070a10;
+      touch-action: pan-x pan-y pinch-zoom;
       -webkit-overflow-scrolling: touch;
     }
-    .preview-pages-wrapper {
+    .doc-container {
       display: inline-block;
-      transition: transform 0.15s ease-out;
+      transition: transform 0.12s ease-out;
       transform-origin: top center;
     }
-    .preview-page-card {
+    .doc-page {
       background-color: #ffffff;
-      border-radius: 6px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
-      margin: 0 auto 20px auto;
+      border-radius: 4px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+      margin: 0 auto 24px auto;
       max-width: 100%;
       overflow: hidden;
     }
-    .preview-page-card img {
+    .doc-page img {
       width: 100%;
       height: auto;
       display: block;
+    }
+    .doc-page-footer {
+      background: #0f172a;
+      color: #64748b;
+      font-size: 0.75rem;
+      padding: 6px;
+      border-top: 1px solid #1e293b;
     }
   </style>
 </head>
@@ -361,47 +374,54 @@ HTML_TEMPLATE = """
         </div>
       </div>
 
-      <!-- KARTU 4: DOKUMEN & PREVIEW LAPORAN -->
-      <div class="card">
-        <div class="card-title">
-          <span>📄 5. Berkas Laporan Resmi (PDF Berita Acara)</span>
-        </div>
-        
-        <div class="grid-2" style="margin-bottom: 10px;">
-          <button type="button" class="btn btn-success" onclick="openReportPreview()">
-            👁️ PREVIEW LAPORAN (ZOOM & SCROLL)
+      <!-- KARTU 4: FORM EVALUASI LAPANGAN & PENERBITAN LAPORAN PDF -->
+      <!-- Tampilan Sesuai Persis Tangkapan Layar Pengguna -->
+      <div class="card" id="evalCard" style="border: 1px solid #0284c7;">
+        <div class="card-title" style="border-bottom: 1px solid #233147; padding-bottom: 8px;">
+          <span>📋 EVALUASI LAPANGAN & PENERBITAN LAPORAN PDF</span>
+          <button type="button" class="btn btn-secondary btn-sm" style="width: auto; padding: 4px 10px; font-size: 0.75rem;" onclick="document.getElementById('resultSection').scrollIntoView({behavior: 'smooth'})">
+            ⬅️ Kembali ke Hasil
           </button>
-          <a id="btnDownloadPdf" href="/api/download_pdf" target="_blank" class="btn btn-secondary">
-            📥 Unduh Langsung PDF
-          </a>
         </div>
-        <a id="btnDownloadCsv" href="/api/download_csv" target="_blank" class="btn btn-secondary" style="font-size: 0.82rem; padding: 8px 12px;">
-          📊 Unduh Data Koordinat CSV
-        </a>
 
-        <!-- AREA PREVIEW LAPORAN INTERAKTIF -->
-        <div id="reportPreviewModal">
-          <div class="preview-toolbar">
-            <span style="color: #38bdf8; font-weight: bold; font-size: 0.85rem;">📑 Preview Dokumen Falak</span>
-            
-            <div class="zoom-btn-group">
-              <button type="button" class="zoom-btn" onclick="stepZoom(-0.2)">➖</button>
-              <span id="lblZoomLevel" style="color: #ffffff; font-size: 0.8rem; font-weight: bold; min-width: 42px; text-align: center;">100%</span>
-              <button type="button" class="zoom-btn" onclick="stepZoom(0.2)">➕</button>
-              <button type="button" class="zoom-btn" onclick="resetZoom()">🔄 100%</button>
-              <button type="button" class="zoom-btn" onclick="fitWidthZoom()">↔️ Pas</button>
-              <a href="/api/download_pdf" target="_blank" class="zoom-btn" style="background: #059669; color: #fff; text-decoration: none;">📥 Unduh</a>
-            </div>
-          </div>
+        <div class="form-group">
+          <label>Nama Lokasi / Pos Observasi Falak:</label>
+          <input type="text" id="editLocation" value="Pos Observasi Falak Lapangan">
+        </div>
 
-          <div class="slider-container" style="margin: 6px 4px 12px 4px;">
-            <input type="range" id="zoomSlider" min="50" max="250" value="100" step="5" oninput="setZoomScale(this.value / 100.0)">
-          </div>
+        <div class="form-group">
+          <label>Petugas Pengamat / Tim Falak:</label>
+          <input type="text" id="editObserver" value="Tim Falak & Astronomi">
+        </div>
 
-          <div class="preview-viewport" id="previewViewport">
-            <div class="preview-pages-wrapper" id="previewWrapper">
-              <!-- Halaman dokumen PDF dimuat di sini secara dinamis -->
-            </div>
+        <div class="form-group">
+          <label>Deskripsi Hasil Analisis Ufuk:</label>
+          <textarea id="textDesc" rows="3" placeholder="Deskripsi otomatis terisi saat proses analisa selesai..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Rekomendasi Kelayakan Tempat Rukyatul Hilal:</label>
+          <textarea id="textRec" rows="3" placeholder="Rekomendasi kelayakan tempat terisi otomatis..."></textarea>
+        </div>
+
+        <!-- PANEL AKSI PENERBITAN BERKAS & DOKUMEN -->
+        <div style="background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; margin-top: 14px;">
+          <p style="color: #38bdf8; font-size: 0.78rem; font-weight: bold; margin-bottom: 10px; letter-spacing: 0.5px;">
+            AKSI PENERBITAN BERKAS & DOKUMEN
+          </p>
+
+          <!-- Tombol Hijau Utama: Buka Preview Laporan Interaktif -->
+          <button type="button" class="btn btn-success" onclick="openReportPreview()" style="margin-bottom: 10px; padding: 14px; font-size: 0.95rem;">
+            🖨️ CETAK / PREVIEW LAPORAN RESMI (PDF BERITA ACARA)
+          </button>
+
+          <div class="grid-2">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="downloadCsv()">
+              📄 Ekspor Data Numerik (CSV)
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="resetObservation()">
+              🚀 Mulai Pengamatan Baru
+            </button>
           </div>
         </div>
 
@@ -411,23 +431,44 @@ HTML_TEMPLATE = """
 
   </div>
 
+  <!-- VIEWER DOKUMEN LAPORAN PDF INTERAKTIF (MODAL DOKUMEN) -->
+  <div id="reportPreviewModal">
+    <div class="preview-doc-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button type="button" class="doc-btn" onclick="closeReportPreview()">⬅️ Tutup</button>
+        <h2>📑 PREVIEW DOKUMEN LAPORAN RESMI</h2>
+      </div>
+
+      <div class="doc-toolbar">
+        <button type="button" class="doc-btn" onclick="stepZoom(-0.2)">➖</button>
+        <span id="lblZoomLevel" style="color: #38bdf8; font-weight: bold; font-size: 0.85rem; min-width: 44px; text-align: center;">100%</span>
+        <button type="button" class="doc-btn" onclick="stepZoom(0.2)">➕</button>
+        <button type="button" class="doc-btn" onclick="resetZoom()">🔄 100%</button>
+        <button type="button" class="doc-btn" onclick="fitWidthZoom()">↔️ Pas Lebar</button>
+        <button type="button" class="doc-btn" style="background: #059669; color: #fff;" onclick="downloadCurrentPdf()">📥 Unduh PDF</button>
+      </div>
+    </div>
+
+    <!-- Toolbar Slider Zoom Cepat -->
+    <div style="background: #111726; padding: 8px 16px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 12px;">
+      <span style="font-size: 0.78rem; color: #94a3b8; white-space: nowrap;">Perbesaran Dokumen:</span>
+      <input type="range" id="zoomSlider" min="50" max="250" value="100" step="5" oninput="setZoomScale(this.value / 100.0)">
+    </div>
+
+    <!-- Viewport Tempat Lembaran Dokumen Muncul -->
+    <div class="doc-viewport" id="docViewport">
+      <div class="doc-container" id="docContainer">
+        <!-- Halaman-halaman PDF dirender di sini -->
+      </div>
+    </div>
+  </div>
+
   <script>
     let selectedImageBase64 = null;
     let currentProfileData = null;
     let cameraStream = null;
     let animFrameId = null;
     let currentZoom = 1.0;
-    let deviceOrientation = { pitch: 0, roll: 0 };
-
-    // Pantau orientasi sensor gerak HP jika didukung
-    if (window.DeviceOrientationEvent) {
-      window.addEventListener('deviceorientation', function(e) {
-        if (e.beta !== null) {
-          deviceOrientation.pitch = e.beta; // derajat tilt sumbu x
-          deviceOrientation.roll = e.gamma; // derajat roll sumbu y
-        }
-      }, true);
-    }
 
     function onFileSelected(input) {
       if (input.files && input.files[0]) {
@@ -483,7 +524,7 @@ HTML_TEMPLATE = """
           drawLiveHudLoop();
         };
       } catch (err) {
-        alert("Tidak dapat mengakses kamera live via browser: " + err.message + "\\nSilakan gunakan tombol 'Jepret Kamera HP' sebagai alternatif.");
+        alert("Tidak dapat mengakses kamera live via browser: " + err.message + "\nSilakan gunakan tombol 'Jepret Kamera HP' sebagai alternatif.");
         wrapper.style.display = 'none';
       }
     }
@@ -694,57 +735,83 @@ HTML_TEMPLATE = """
     }
 
     function updateTargetDisplay(targetAz, analysis) {
-      document.getElementById('resTargetAlt').innerText = (analysis.target_alt >= 0 ? "+" : "") + analysis.target_alt.toFixed(2) + "°";
+      const altStr = (analysis.target_alt >= 0 ? "+" : "") + analysis.target_alt.toFixed(2) + "°";
+      document.getElementById('resTargetAlt').innerText = altStr;
       document.getElementById('resDip').innerText = "-" + (analysis.dip_deg || 0.20).toFixed(2) + "°";
       document.getElementById('resStatusTxt').innerText = analysis.severity || analysis.status || "Layak";
       const cat = analysis.category || analysis.status || "Ufuk Terbuka";
-      const rec = analysis.recommendation || (analysis.target_alt <= 0.0 ? "Lokasi REKOMENDED (LAYAK) untuk rukyatul hilal." : "PERLU DIPERHATIKAN, terdapat halangan daratan/bukit.");
-      document.getElementById('resDescText').innerText = 
-        `Pada azimut ${targetAz.toFixed(2)}°, rintangan ufuk setinggi ${(analysis.target_alt >= 0 ? "+" : "") + analysis.target_alt.toFixed(2)}°. Kategori: ${cat}. ${rec}`;
+      
+      const smartDesc = `Berdasarkan ekstraksi kontur computer vision pada azimut bidikan ${targetAz.toFixed(2)}°, diperoleh tinggi rintangan ufuk pada azimut sasaran ${targetAz.toFixed(2)}° sebesar ${altStr}. Kondisi ufuk: ${cat}.`;
+      document.getElementById('resDescText').innerText = smartDesc;
+      document.getElementById('textDesc').value = smartDesc;
+
+      let smartRec = "";
+      if (analysis.target_alt <= 0.0) {
+        smartRec = `Lokasi pengamatan REKOMENDED (LAYAK). Tidak terdapat rintangan signifikan pada azimut ${targetAz.toFixed(2)}°. Ufuk mar'i berada di bawah atau sejajar ufuk hakiki sehingga sangat mendukung rukyatul hilal.`;
+      } else if (analysis.target_alt <= 1.2) {
+        smartRec = `Terdapat siluet halangan rendah setinggi ${altStr}. Hilal dengan ketinggian di atas 1.5° masih aman terpantau.`;
+      } else {
+        smartRec = `Lokasi pengamatan PERLU DIPERHATIKAN. Terdapat halangan daratan/bukit setinggi ${altStr} pada azimut ${targetAz.toFixed(2)}°. Hilal dengan ketinggian di bawah rintangan ini akan terhalang. Ambang MABIMS 3° berada dekat halangan.`;
+      }
+      document.getElementById('textRec').value = smartRec;
     }
 
     // ==========================================
-    // PREVIEW LAPORAN RESMI (ZOOM & SCROLL)
+    // PREVIEW LAPORAN DOKUMEN MODAL (ZOOM & SCROLL)
     // ==========================================
     function openReportPreview() {
       const modal = document.getElementById('reportPreviewModal');
-      const wrapper = document.getElementById('previewWrapper');
-      modal.style.display = 'block';
-      wrapper.innerHTML = "<p style='color: #38bdf8; padding: 20px;'>Sedang merender halaman dokumen PDF resmi...</p>";
-      modal.scrollIntoView({ behavior: 'smooth' });
+      const container = document.getElementById('docContainer');
+      modal.style.display = 'flex';
+      container.innerHTML = "<p style='color: #38bdf8; padding: 40px; font-weight: bold;'>⏳ Sedang merender lembaran dokumen PDF resmi...</p>";
 
-      fetch('/api/preview_pdf')
-        .then(res => res.json())
-        .then(data => {
-          if (data.error) {
-            wrapper.innerHTML = `<p style="color: #ef4444; padding: 20px;">Gagal merender PDF: ${data.error}</p>`;
-            return;
-          }
+      const payload = {
+        location_name: document.getElementById('editLocation').value.trim() || "Pos Observasi Falak Lapangan",
+        observer_name: document.getElementById('editObserver').value.trim() || "Tim Falak & Astronomi",
+        observer_notes: document.getElementById('textDesc').value.trim(),
+        recommendation_text: document.getElementById('textRec').value.trim()
+      };
 
-          wrapper.innerHTML = "";
-          data.pages.forEach((pageB64, idx) => {
-            const card = document.createElement('div');
-            card.className = "preview-page-card";
-            card.innerHTML = `
-              <img src="${pageB64}" alt="Halaman ${idx + 1}">
-              <div style="background: #0f172a; color: #94a3b8; font-size: 0.72rem; padding: 6px; text-align: center;">
-                — Halaman ${idx + 1} dari ${data.pages.length} —
-              </div>
-            `;
-            wrapper.appendChild(card);
-          });
+      fetch('/api/preview_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          container.innerHTML = `<p style="color: #ef4444; padding: 40px;">Gagal memuat dokumen: ${data.error}</p>`;
+          return;
+        }
 
-          resetZoom();
-        })
-        .catch(err => {
-          wrapper.innerHTML = `<p style="color: #ef4444; padding: 20px;">Koneksi gagal: ${err.message}</p>`;
+        container.innerHTML = "";
+        data.pages.forEach((pageB64, idx) => {
+          const card = document.createElement('div');
+          card.className = "doc-page";
+          card.innerHTML = `
+            <img src="${pageB64}" alt="Halaman ${idx + 1}">
+            <div class="doc-page-footer">
+              Dokumen Berita Acara Falak • Halaman ${idx + 1} dari ${data.pages.length}
+            </div>
+          `;
+          container.appendChild(card);
         });
+
+        resetZoom();
+      })
+      .catch(err => {
+        container.innerHTML = `<p style="color: #ef4444; padding: 40px;">Koneksi gagal: ${err.message}</p>`;
+      });
+    }
+
+    function closeReportPreview() {
+      document.getElementById('reportPreviewModal').style.display = 'none';
     }
 
     function setZoomScale(scale) {
       currentZoom = Math.max(0.4, Math.min(2.8, scale));
-      const wrapper = document.getElementById('previewWrapper');
-      wrapper.style.transform = `scale(${currentZoom})`;
+      const container = document.getElementById('docContainer');
+      container.style.transform = `scale(${currentZoom})`;
       document.getElementById('lblZoomLevel').innerText = Math.round(currentZoom * 100) + "%";
       document.getElementById('zoomSlider').value = Math.round(currentZoom * 100);
     }
@@ -758,11 +825,28 @@ HTML_TEMPLATE = """
     }
 
     function fitWidthZoom() {
-      const viewport = document.getElementById('previewViewport');
+      const viewport = document.getElementById('docViewport');
       const vw = viewport.clientWidth - 40;
-      // Lebar dasar dokumen A4 pada render
       const scale = Math.max(0.4, Math.min(2.0, vw / 650.0));
       setZoomScale(scale);
+    }
+
+    function downloadCurrentPdf() {
+      const loc = encodeURIComponent(document.getElementById('editLocation').value.trim() || "Pos Observasi");
+      window.open('/api/download_pdf?loc=' + loc, '_blank');
+    }
+
+    function downloadCsv() {
+      window.open('/api/download_csv', '_blank');
+    }
+
+    function resetObservation() {
+      selectedImageBase64 = null;
+      document.getElementById('rawPreview').style.display = 'none';
+      document.getElementById('resultSection').style.display = 'none';
+      document.getElementById('lblPhotoStatus').innerText = "Belum ada foto yang dipilih";
+      document.getElementById('lblPhotoStatus').style.color = "#94a3b8";
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   </script>
 </body>
@@ -974,8 +1058,8 @@ def api_recalculate_target():
     })
 
 
-def _generate_current_pdf_path() -> str:
-    """Helper untuk menerbitkan PDF terkini dari cache analisis."""
+def _generate_current_pdf_path(location_name=None, observer_notes=None, recommendation_text=None) -> str:
+    """Helper untuk menerbitkan PDF terkini dari cache analisis dengan catatan evaluator."""
     global LAST_ANALYSIS
     if not LAST_ANALYSIS:
         raise ValueError("Belum ada data analisis aktif")
@@ -985,12 +1069,13 @@ def _generate_current_pdf_path() -> str:
     pdf_path = os.path.join(exports_dir, f"Laporan_Ufuk_Web_{int(time.time())}.pdf")
 
     ta = LAST_ANALYSIS["target_analysis"]
-    desc = f"Analisis berbasis Computer Vision pada azimut {ta['target_az']:.2f}°. Kondisi: {ta.get('category', 'Ufuk Mar-i')}."
-    rec = ta.get("recommendation", "Lokasi rukyatul hilal tervalidasi.")
+    desc = observer_notes or f"Analisis berbasis Computer Vision pada azimut {ta['target_az']:.2f}°. Kondisi: {ta.get('category', 'Ufuk Mar-i')}."
+    rec = recommendation_text or ta.get("recommendation", "Lokasi rukyatul hilal tervalidasi.")
+    loc = location_name or "Pos Observasi Falak Lapangan"
 
     export_pdf_report(
         output_pdf_path=pdf_path,
-        location_name="Pos Observasi Falak (Web Mobile)",
+        location_name=loc,
         latitude=LAST_ANALYSIS["latitude"],
         longitude=LAST_ANALYSIS["longitude"],
         elevation_m=LAST_ANALYSIS["altitude"],
@@ -1008,15 +1093,20 @@ def _generate_current_pdf_path() -> str:
     return pdf_path
 
 
-@app.route("/api/preview_pdf", methods=["GET"])
+@app.route("/api/preview_pdf", methods=["POST", "GET"])
 def api_preview_pdf():
-    """Merender halaman dokumen PDF resmi ke format citra untuk preview interaktif di HP."""
+    """Merender halaman dokumen PDF resmi ke format citra untuk preview interaktif dokumen."""
     try:
-        pdf_path = _generate_current_pdf_path()
+        data = request.json or {} if request.method == "POST" else {}
+        loc = data.get("location_name") or request.args.get("loc")
+        notes = data.get("observer_notes")
+        rec = data.get("recommendation_text")
+
+        pdf_path = _generate_current_pdf_path(location_name=loc, observer_notes=notes, recommendation_text=rec)
         pdf = pypdfium2.PdfDocument(pdf_path)
         pages_b64 = []
         for i in range(len(pdf)):
-            pil_img = pdf[i].render(scale=2.0).to_pil()
+            pil_img = pdf[i].render(scale=2.2).to_pil()
             buf = io.BytesIO()
             pil_img.save(buf, format="JPEG", quality=88)
             pages_b64.append("data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("utf-8"))
@@ -1033,7 +1123,8 @@ def api_preview_pdf():
 @app.route("/api/download_pdf", methods=["GET"])
 def api_download_pdf():
     try:
-        pdf_path = _generate_current_pdf_path()
+        loc = request.args.get("loc")
+        pdf_path = _generate_current_pdf_path(location_name=loc)
         return send_file(pdf_path, as_attachment=True, download_name="Laporan_Ufuk_Mar'i.pdf")
     except Exception as e:
         return f"Gagal membuat PDF: {str(e)}", 400
@@ -1065,7 +1156,6 @@ def main():
     print("   APLIKASI WEB PEMETAAN UFUK MAR'I (MOBILE & DESKTOP)")
     print("   Buka dari Browser Laptop : http://localhost:5000")
     print("   Buka dari Browser HP     : http://<IP_LAPTOP>:5000")
-    print("   Contoh IP Laptop Anda    : http://192.168.0.105:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False)
 
