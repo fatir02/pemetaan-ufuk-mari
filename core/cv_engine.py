@@ -149,11 +149,20 @@ class HorizonDetector:
             # Fusi energi multi-spektral astronomis
             energy = 0.35 * e_l + 0.25 * e_gray + 0.25 * e_b + 0.15 * e_step
 
+            # Prioritas batas teratas (Zenith-to-Nadir Sky Prior):
+            # Ufuk mar'i sejati adalah batas transisi utama pertama dari kubah langit terbuka.
+            # Tepi pantulan cahaya di permukaan air laut (glare/reflection) di bawah siluet daratan
+            # ditekan agar kontur konsisten mengikuti punggung daratan dan tidak anjlok ke air.
+            cum_energy = np.cumsum(energy, axis=0)
+            max_cum = np.maximum(cum_energy[-1:, :], 1e-4)
+            zenith_weight = np.exp(-1.1 * (cum_energy / max_cum))
+            energy_weighted = energy * (0.50 + 0.50 * zenith_weight)
+
             # 3. Normalisasi kolom dengan Global Floor untuk mencegah amplifikasi noise pada kolom berkabut
-            p99_e = float(np.percentile(energy, 99.5))
+            p99_e = float(np.percentile(energy_weighted, 99.5))
             global_floor = max(0.15 * p99_e, 1e-4)
-            col_max = np.maximum(np.max(energy, axis=0, keepdims=True), global_floor)
-            energy_norm = energy / col_max
+            col_max = np.maximum(np.max(energy_weighted, axis=0, keepdims=True), global_floor)
+            energy_norm = energy_weighted / col_max
 
             cost = 1.0 - energy_norm
             roi_h = y_max - y_min

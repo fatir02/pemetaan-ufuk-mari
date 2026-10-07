@@ -900,6 +900,39 @@ HTML_TEMPLATE = """
       setZoomScale(scale);
     }
 
+    // Dukungan Gestur Sentuh 2 Jari (Pinch-to-Zoom & Pan) pada Layar HP
+    let touchStartDist = 0;
+    let touchStartZoom = 1.0;
+
+    function getTouchesDist(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    const docView = document.getElementById('docViewport');
+    docView.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 2) {
+        touchStartDist = getTouchesDist(e.touches);
+        touchStartZoom = currentZoom;
+      }
+    }, { passive: true });
+
+    docView.addEventListener('touchmove', function(e) {
+      if (e.touches.length === 2 && touchStartDist > 0) {
+        const curDist = getTouchesDist(e.touches);
+        const factor = curDist / touchStartDist;
+        setZoomScale(touchStartZoom * factor);
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    docView.addEventListener('touchend', function(e) {
+      if (e.touches.length < 2) {
+        touchStartDist = 0;
+      }
+    }, { passive: true });
+
     function downloadCurrentPdf() {
       const loc = encodeURIComponent(document.getElementById('editLocation').value.trim() || "Pos Observasi");
       window.open('/api/download_pdf?loc=' + loc, '_blank');
