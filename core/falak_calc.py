@@ -113,15 +113,14 @@ def pixel_to_azimuth_elevation(
 ) -> Tuple[Union[float, np.ndarray], Union[float, np.ndarray]]:
     """
     Mengonversi koordinat piksel (x, y) menjadi (Azimut, Elevasi) dalam derajat.
-    Menggunakan proyeksi pinhole optik standar:
-      tan(ΔAz)  = ((x - xc) / (W/2)) * tan(HFOV / 2)
-      tan(ΔAlt) = ((yc - y) / (H/2)) * tan(VFOV / 2)
-    
-    Kamera:
-      - x=0 (sisi kiri) -> Azimut lebih kecil (Selatan jika menghadap Barat)
-      - x=W-1 (sisi kanan) -> Azimut lebih besar (Utara jika menghadap Barat)
-      - y=0 (puncak gambar) -> Elevasi positif / lebih tinggi
-      - y=H-1 (dasar gambar) -> Elevasi negatif / lebih rendah
+    Menggunakan proyeksi pinhole optik 3D terkopel rotasi pitch kamera:
+      fx = (W/2) / tan(HFOV/2)
+      fy = (H/2) / tan(VFOV/2)
+      Xc = (x - xc) / fx, Yc = (yc - y) / fy, Zc = 1.0
+      Rotasi pitch terhadap sumbu X:
+      Xw = Xc, Yw = Yc*cos(tilt) + sin(tilt), Zw = -Yc*sin(tilt) + cos(tilt)
+      Az = az_center + arctan2(Xw, Zw)
+      Alt = arctan2(Yw, sqrt(Xw^2 + Zw^2))
     """
     if img_w <= 0 or img_h <= 0:
         return az_center, tilt_center
@@ -136,26 +135,33 @@ def pixel_to_azimuth_elevation(
     xc = (img_w - 1) / 2.0
     yc = (img_h - 1) / 2.0
 
-    tan_half_hfov = math.tan(hfov_rad / 2.0)
-    tan_half_vfov = math.tan(vfov_rad / 2.0)
+    fx = (img_w / 2.0) / math.tan(hfov_rad / 2.0)
+    fy = (img_h / 2.0) / math.tan(vfov_rad / 2.0)
 
-    # Perhitungan delta Azimut
-    norm_x = (x - xc) / (img_w / 2.0)
-    if isinstance(x, np.ndarray):
-        delta_az_rad = np.arctan(norm_x * tan_half_hfov)
-        azimuth = (az_center + np.degrees(delta_az_rad)) % 360.0
-    else:
-        delta_az_rad = math.atan(norm_x * tan_half_hfov)
-        azimuth = (az_center + math.degrees(delta_az_rad)) % 360.0
+    theta = math.radians(tilt_center)
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
 
-    # Perhitungan delta Elevasi
-    norm_y = (yc - y) / (img_h / 2.0)
-    if isinstance(y, np.ndarray):
-        delta_alt_rad = np.arctan(norm_y * tan_half_vfov)
-        elevation = tilt_center + np.degrees(delta_alt_rad)
+    if isinstance(x, np.ndarray) or isinstance(y, np.ndarray):
+        xc_norm = (x - xc) / fx
+        yc_norm = (yc - y) / fy
+        xw = xc_norm
+        yw = yc_norm * cos_t + sin_t
+        zw = -yc_norm * sin_t + cos_t
+
+        delta_az_deg = np.degrees(np.arctan2(xw, zw))
+        azimuth = az_center + delta_az_deg
+        elevation = np.degrees(np.arctan2(yw, np.sqrt(xw**2 + zw**2)))
     else:
-        delta_alt_rad = math.atan(norm_y * tan_half_vfov)
-        elevation = tilt_center + math.degrees(delta_alt_rad)
+        xc_norm = (float(x) - xc) / fx
+        yc_norm = (yc - float(y)) / fy
+        xw = xc_norm
+        yw = yc_norm * cos_t + sin_t
+        zw = -yc_norm * sin_t + cos_t
+
+        delta_az_deg = math.degrees(math.atan2(xw, zw))
+        azimuth = az_center + delta_az_deg
+        elevation = math.degrees(math.atan2(yw, math.sqrt(xw**2 + zw**2)))
 
     return azimuth, elevation
 
@@ -172,7 +178,7 @@ def azimuth_elevation_to_pixel(
 ) -> Tuple[int, int]:
     """
     Mengonversi sudut (Azimut, Elevasi) menjadi koordinat piksel (x, y).
-    Mengembalikan koordinat bulat (integer).
+    Menggunakan proyeksi balik pinhole optik 3D terkopel pitch kamera.
     """
     if img_w <= 0 or img_h <= 0:
         return int(img_w / 2), int(img_h / 2)
@@ -186,26 +192,30 @@ def azimuth_elevation_to_pixel(
     xc = (img_w - 1) / 2.0
     yc = (img_h - 1) / 2.0
 
-    tan_half_hfov = math.tan(hfov_rad / 2.0)
-    tan_half_vfov = math.tan(vfov_rad / 2.0)
+    fx = (img_w / 2.0) / math.tan(hfov_rad / 2.0)
+    fy = (img_h / 2.0) / math.tan(vfov_rad / 2.0)
 
-    # Selisih azimut
-    delta_az = az - az_center
-    # Tangani wrapping 360 derajat jika melintasi batas 0/360
-    if delta_az > 180.0:
-        delta_az -= 360.0
-    elif delta_az < -180.0:
-        delta_az += 360.0
-
+    # Selisih azimut dinormalisasi ke rentang [-180, 180] derajat
+    delta_az = (az - az_center + 180.0) % 360.0 - 180.0
     delta_az_rad = math.radians(delta_az)
-    norm_x = math.tan(delta_az_rad) / tan_half_hfov
-    x = xc + (norm_x * (img_w / 2.0))
+    alt_rad = math.radians(alt)
+    theta = math.radians(tilt_center)
 
-    # Selisih elevasi
-    delta_alt = alt - tilt_center
-    delta_alt_rad = math.radians(delta_alt)
-    norm_y = math.tan(delta_alt_rad) / tan_half_vfov
-    y = yc - (norm_y * (img_h / 2.0))
+    # Vektor arah 3D di koordinat dunia
+    xw = math.cos(alt_rad) * math.sin(delta_az_rad)
+    yw = math.sin(alt_rad)
+    zw = math.cos(alt_rad) * math.cos(delta_az_rad)
+
+    # Rotasi balik pitch kamera (-theta di sumbu X) ke koordinat kamera
+    xc_ray = xw
+    yc_ray = yw * math.cos(theta) - zw * math.sin(theta)
+    zc_ray = yw * math.sin(theta) + zw * math.cos(theta)
+
+    if zc_ray <= 1e-6:
+        return -9999, -9999
+
+    x = xc + fx * (xc_ray / zc_ray)
+    y = yc - fy * (yc_ray / zc_ray)
 
     return int(round(x)), int(round(y))
 

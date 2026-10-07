@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTextEdit, QLineEdit,
-    QMessageBox, QFileDialog
+    QMessageBox, QFileDialog, QScrollArea
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -26,6 +26,7 @@ class ScreenReport(QWidget):
     """Layar Pelaporan & Dokumen PDF."""
     back_to_result = pyqtSignal()
     start_new_observation = pyqtSignal()
+    proceed_to_preview = pyqtSignal(str, dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,8 +36,20 @@ class ScreenReport(QWidget):
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(24, 16, 24, 16)
-        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        scroll_content = QWidget()
+        content_layout = QVBoxLayout(scroll_content)
+        content_layout.setContentsMargins(20, 16, 20, 16)
+        content_layout.setSpacing(14)
 
         # Header Layar 4
         head_row = QHBoxLayout()
@@ -59,7 +72,7 @@ class ScreenReport(QWidget):
         head_row.addWidget(lbl_head)
 
         head_row.addStretch()
-        main_layout.addLayout(head_row)
+        content_layout.addLayout(head_row)
 
         # Kartu Form Evaluasi
         form_card = QFrame()
@@ -108,7 +121,7 @@ class ScreenReport(QWidget):
         self.text_rec.setStyleSheet(self._input_style())
         form_l.addWidget(self.text_rec)
 
-        main_layout.addWidget(form_card)
+        content_layout.addWidget(form_card)
 
         # Kartu Aksi Penerbitan & Ekspor
         action_card = QFrame()
@@ -125,8 +138,8 @@ class ScreenReport(QWidget):
         lbl_act_title.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: bold; letter-spacing: 1px;")
         act_l.addWidget(lbl_act_title)
 
-        # Tombol Cetak PDF Utama
-        self.btn_print_pdf = QPushButton("🖨️  CETAK LAPORAN RESMI (PDF BERITA ACARA)")
+        # Tombol Cetak PDF Utama & Masuk ke Menu Preview
+        self.btn_print_pdf = QPushButton("🖨️  CETAK & PREVIEW LAPORAN RESMI (PDF BERITA ACARA)")
         self.btn_print_pdf.setCursor(Qt.PointingHandCursor)
         self.btn_print_pdf.setMinimumHeight(52)
         self.btn_print_pdf.setStyleSheet("""
@@ -161,7 +174,10 @@ class ScreenReport(QWidget):
         sub_act_row.addWidget(self.btn_new_observation)
 
         act_l.addLayout(sub_act_row)
-        main_layout.addWidget(action_card)
+        content_layout.addWidget(action_card)
+
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area)
 
     def _input_style(self) -> str:
         return """
@@ -272,17 +288,8 @@ class ScreenReport(QWidget):
                 observer_notes=self.text_desc.toPlainText().strip(),
                 recommendation_text=self.text_rec.toPlainText().strip(),
             )
-            reply = QMessageBox.information(
-                self, "Sukses Cetak PDF",
-                f"Dokumen Laporan PDF Resmi berhasil diterbitkan:\n\n{pdf_path}\n\nBuka dokumen sekarang?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
-            if reply == QMessageBox.Yes:
-                try:
-                    os.startfile(pdf_path)
-                except Exception:
-                    pass
+            # Picu transisi ke Menu Preview Laporan
+            self.proceed_to_preview.emit(pdf_path, self.data_package)
         except Exception as e:
             QMessageBox.critical(self, "Gagal Cetak PDF", f"Terjadi kesalahan saat membuat PDF:\n{str(e)}")
 

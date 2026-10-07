@@ -50,6 +50,19 @@ def test_full_pipeline():
     assert screen2.azimuth_val == 270.0, "Azimuth default harus 270.0° (Barat)!"
     print(f"4. Layar 2 Siap dengan {len(screen2.captured_images)} foto & Bidikan Azimuth {screen2.azimuth_val}° (Barat)")
 
+    # Uji Pengelolaan Slot & Tombol Hapus Slot Terpilih
+    initial_count = len(screen2.captured_images)
+    screen2._load_sample_landscape()  # Tambah foto kedua
+    assert len(screen2.captured_images) == initial_count + 1, "Penambahan foto ke slot gagal!"
+    print(f"   - Menambah foto slot baru: total {len(screen2.captured_images)} foto")
+
+    # Pilih slot ke-2 dan hapus menggunakan tombol hapus
+    screen2._select_thumbnail(1)
+    assert screen2.selected_image_index == 1, "Pemilihan slot 2 gagal!"
+    screen2.btn_delete_photo.click()
+    assert len(screen2.captured_images) == initial_count, "Tombol Hapus gagal menghapus slot yang dipilih!"
+    print("   - Uji Tombol Hapus Slot Terpilih: BERHASIL")
+
     # Picu proses ekstraksi kontur ufuk mar'i
     screen2._process_and_proceed()
     assert window.stacked_widget.currentIndex() == 2, "Pindah ke Layar 3 gagal!"
@@ -87,32 +100,36 @@ def test_full_pipeline():
     assert len(screen4.text_rec.toPlainText()) > 10, "Draft rekomendasi tidak terisi otomatis!"
     print("9. Form Evaluasi & Rekomendasi Terisi Otomatis: BERHASIL")
 
-    # Uji Cetak PDF
-    exports_dir = os.path.abspath("exports")
-    os.makedirs(exports_dir, exist_ok=True)
-    pdf_out = os.path.join(exports_dir, "verifikasi_laporan_ufuk.pdf")
-    from core.report_generator import export_pdf_report
-    export_pdf_report(
-        output_pdf_path=pdf_out,
-        location_name="Pos Observasi Falak Parangtritis",
-        latitude=screen4.data_package["latitude"],
-        longitude=screen4.data_package["longitude"],
-        elevation_m=screen4.data_package["altitude"],
-        az_center=screen4.data_package["azimuth"],
-        hfov=15.0,
-        vfov=8.5,
-        tilt_center=screen4.data_package["elevation"],
-        dip_deg=prof["dip_deg"],
-        profile_data=prof,
-        overlay_img_bgr=screen4.data_package["overlay_image"],
-        target_analysis=screen4.data_package["target_analysis"],
-        observer_notes=screen4.text_desc.toPlainText(),
-        recommendation_text=screen4.text_rec.toPlainText(),
-    )
-    assert os.path.exists(pdf_out), "File PDF tidak terbentuk!"
-    print(f"10. Penerbitan Laporan PDF Resmi: BERHASIL ({os.path.getsize(pdf_out)} bytes)")
+    # Simulasikan klik tombol Cetak Laporan Resmi -> harus masuk ke Layar 5 (Preview Laporan)
+    screen4.btn_print_pdf.click()
+    assert window.stacked_widget.currentIndex() == 4, "Navigasi ke Layar 5 (Preview Laporan) gagal!"
+    print("10. Tombol Cetak Membuka Menu Preview Laporan (Layar 5): BERHASIL")
+
+    # ==========================================
+    # TEST LAYAR 5: PREVIEW LAPORAN (ZOOM & SCROLL)
+    # ==========================================
+    screen5 = window.screen_preview
+    assert len(screen5.base_pixmaps) > 0, "Preview PDF harus merender setidaknya 1 halaman!"
+    print(f"11. Dokumen Terender di Menu Preview: {len(screen5.base_pixmaps)} Halaman")
+
+    # Uji Fitur Zoom In, Zoom Out, dan Fit
+    screen5.btn_zoom_in.click()
+    assert screen5.zoom_factor > 1.0, "Fitur Zoom In gagal!"
+    screen5.btn_zoom_out.click()
+    screen5.btn_fit_page.click()
+    assert abs(screen5.zoom_factor - 1.0) < 1e-4, "Fitur Reset 100% gagal!"
+    screen5.slider_zoom.setValue(150)
+    assert abs(screen5.zoom_factor - 1.5) < 1e-4, "Fitur Slider Zoom gagal!"
+    print("12. Uji Zoom In, Zoom Out, Slider Zoom & Scroll Area: BERHASIL")
+
+    # Uji Navigasi Kembali dari Preview ke Form Laporan
+    screen5.btn_back.click()
+    assert window.stacked_widget.currentIndex() == 3, "Navigasi kembali ke Layar 4 gagal!"
+    print("13. Navigasi Kembali dari Preview ke Form: BERHASIL")
 
     # Uji Ekspor CSV
+    exports_dir = os.path.abspath("exports")
+    os.makedirs(exports_dir, exist_ok=True)
     csv_out = os.path.join(exports_dir, "verifikasi_data_ufuk.csv")
     from core.report_generator import export_csv_data
     export_csv_data(
@@ -123,16 +140,16 @@ def test_full_pipeline():
         dip_deg=prof["dip_deg"]
     )
     assert os.path.exists(csv_out), "File CSV tidak terbentuk!"
-    print(f"11. Penerbitan Data Koordinat CSV: BERHASIL ({os.path.getsize(csv_out)} bytes)")
+    print(f"14. Penerbitan Data Koordinat CSV: BERHASIL ({os.path.getsize(csv_out)} bytes)")
 
     # Uji Simpan Plot PNG
     png_out = os.path.join(exports_dir, "verifikasi_plot_ufuk.png")
     screen3.plot_canvas.save_figure(png_out)
     assert os.path.exists(png_out), "File PNG plot tidak terbentuk!"
-    print(f"12. Penerbitan Gambar Grafik PNG: BERHASIL ({os.path.getsize(png_out)} bytes)")
+    print(f"15. Penerbitan Gambar Grafik PNG: BERHASIL ({os.path.getsize(png_out)} bytes)")
 
     window.close()
-    print("=== SEMUA PENGUJIAN 4-LAYAR BERHASIL 100%! ===")
+    print("=== SEMUA PENGUJIAN 5-LAYAR BERHASIL 100%! ===")
 
 
 if __name__ == "__main__":

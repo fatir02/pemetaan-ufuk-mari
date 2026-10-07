@@ -21,6 +21,7 @@ from ui.screens.screen_dashboard import ScreenDashboard
 from ui.screens.screen_observation import ScreenObservation
 from ui.screens.screen_result import ScreenResult
 from ui.screens.screen_report import ScreenReport
+from ui.screens.screen_report_preview import ScreenReportPreview
 
 
 class MainWindow(QMainWindow):
@@ -52,17 +53,19 @@ class MainWindow(QMainWindow):
         # ==========================================
         self.stacked_widget = QStackedWidget()
 
-        # Inisialisasi 4 Layar
+        # Inisialisasi 5 Layar Wizard
         self.screen_dashboard = ScreenDashboard(self)
         self.screen_observation = ScreenObservation(self)
         self.screen_result = ScreenResult(self)
         self.screen_report = ScreenReport(self)
+        self.screen_preview = ScreenReportPreview(self)
 
         # Tambahkan ke QStackedWidget
         self.stacked_widget.addWidget(self.screen_dashboard)    # Index 0
         self.stacked_widget.addWidget(self.screen_observation)  # Index 1
         self.stacked_widget.addWidget(self.screen_result)       # Index 2
         self.stacked_widget.addWidget(self.screen_report)       # Index 3
+        self.stacked_widget.addWidget(self.screen_preview)      # Index 4
 
         # Sambungkan sinyal antar layar
         # Layar 1 -> Layar 2
@@ -76,9 +79,14 @@ class MainWindow(QMainWindow):
         self.screen_result.retake_requested.connect(lambda: self.switch_screen(1))
         self.screen_result.proceed_to_report.connect(self._on_result_to_report)
 
-        # Layar 4 -> Layar 3 atau Layar 2
+        # Layar 4 -> Layar 3 atau Layar 2 atau Layar 5 (Preview)
         self.screen_report.back_to_result.connect(lambda: self.switch_screen(2))
         self.screen_report.start_new_observation.connect(lambda: self.switch_screen(1))
+        self.screen_report.proceed_to_preview.connect(self._on_report_to_preview)
+
+        # Layar 5 (Preview) -> Layar 4 atau Layar 2
+        self.screen_preview.back_to_report.connect(lambda: self.switch_screen(3))
+        self.screen_preview.start_new_observation.connect(lambda: self.switch_screen(1))
 
         main_layout.addWidget(self.stacked_widget)
 
@@ -116,9 +124,9 @@ class MainWindow(QMainWindow):
 
     def switch_screen(self, index: int):
         """Berpindah layar wizard alur kerja aplikasi."""
-        # Jika user langsung melompat ke Layar 3 atau Layar 4 sebelum proses manual,
+        # Jika user langsung melompat ke Layar 3, 4, atau 5 sebelum proses manual,
         # otomatis siapkan data pengamatan dari foto/sampel default agar layar tidak kosong
-        if index in (2, 3) and (self.screen_result.data_package is None or self.screen_report.data_package is None):
+        if index in (2, 3, 4) and (self.screen_result.data_package is None or self.screen_report.data_package is None):
             package = self.screen_observation.build_observation_package()
             if package:
                 if self.screen_result.data_package is None:
@@ -137,6 +145,11 @@ class MainWindow(QMainWindow):
         """Saat user melanjutkan dari Layar 3 -> muat data ke Layar 4."""
         self.screen_report.load_data(package)
         self.switch_screen(3)
+
+    def _on_report_to_preview(self, pdf_path: str, data_package: dict):
+        """Saat dokumen laporan selesai dibuat -> masuk ke menu preview laporan (Layar 5)."""
+        self.screen_preview.load_pdf(pdf_path, data_package)
+        self.switch_screen(4)
 
     def _init_clock_timer(self):
         """Memperbarui jam astronomi setiap detik."""

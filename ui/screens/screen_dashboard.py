@@ -9,14 +9,14 @@ Tampilan awal yang bersih dan minimalis sesuai permintaan alur simpel:
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QFrame
+    QPushButton, QFrame, QScrollArea, QGridLayout
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap
 
 
 class ScreenDashboard(QWidget):
-    """Layar Beranda / Dashboard Minimalis."""
+    """Layar Beranda / Dashboard Minimalis dengan tata letak responsif."""
     # Sinyal untuk berpindah ke Layar 2 (Pengamatan)
     start_requested = pyqtSignal()
 
@@ -26,22 +26,35 @@ class ScreenDashboard(QWidget):
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(40, 40, 40, 40)
-        main_layout.setAlignment(Qt.AlignCenter)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setContentsMargins(16, 16, 16, 16)
+        scroll_layout.setAlignment(Qt.AlignCenter)
 
         # Kartu Kontainer Tengah
         card = QFrame()
         card.setObjectName("DashboardCard")
+        card.setMaximumWidth(680)
         card.setStyleSheet("""
             #DashboardCard {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #151922, stop:1 #0e1117);
                 border: 1px solid #232a38;
                 border-radius: 20px;
-                padding: 40px;
+                padding: 24px;
             }
         """)
         card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(18)
+        card_layout.setSpacing(14)
         card_layout.setAlignment(Qt.AlignCenter)
 
         # Badge Label Kategori
@@ -62,7 +75,7 @@ class ScreenDashboard(QWidget):
         # Ikon Eksplorasi Ufuk
         lbl_icon = QLabel("🔭")
         lbl_icon.setAlignment(Qt.AlignCenter)
-        lbl_icon.setStyleSheet("font-size: 72px; margin: 10px 0;")
+        lbl_icon.setStyleSheet("font-size: 64px; margin: 6px 0;")
         card_layout.addWidget(lbl_icon, alignment=Qt.AlignCenter)
 
         # Judul Utama Aplikasi
@@ -70,7 +83,7 @@ class ScreenDashboard(QWidget):
         lbl_title.setAlignment(Qt.AlignCenter)
         lbl_title.setStyleSheet("""
             color: #ffffff;
-            font-size: 26px;
+            font-size: 24px;
             font-weight: 800;
             letter-spacing: 0.5px;
         """)
@@ -84,17 +97,18 @@ class ScreenDashboard(QWidget):
         lbl_desc.setAlignment(Qt.AlignCenter)
         lbl_desc.setStyleSheet("""
             color: #94a3b8;
-            font-size: 13px;
+            font-size: 12px;
             line-height: 1.5;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         """)
         card_layout.addWidget(lbl_desc)
 
         # Satu Tombol Utama Sesuai Spesifikasi: [MULAI PENGAMATAN]
         self.btn_mulai = QPushButton("🚀  MULAI PENGAMATAN")
         self.btn_mulai.setCursor(Qt.PointingHandCursor)
-        self.btn_mulai.setMinimumHeight(56)
-        self.btn_mulai.setMinimumWidth(320)
+        self.btn_mulai.setMinimumHeight(52)
+        self.btn_mulai.setMinimumWidth(240)
+        self.btn_mulai.setMaximumWidth(400)
         self.btn_mulai.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #0369a1);
@@ -117,9 +131,9 @@ class ScreenDashboard(QWidget):
         self.btn_mulai.clicked.connect(self.start_requested.emit)
         card_layout.addWidget(self.btn_mulai, alignment=Qt.AlignCenter)
 
-        # Baris Info Fitur Cepat di Bawah Tombol
-        info_layout = QHBoxLayout()
-        info_layout.setSpacing(20)
+        # Baris Info Fitur Cepat di Bawah Tombol (Grid responsif)
+        info_layout = QGridLayout()
+        info_layout.setSpacing(12)
         info_layout.setAlignment(Qt.AlignCenter)
 
         features = [
@@ -128,25 +142,27 @@ class ScreenDashboard(QWidget):
             ("📄 Laporan Resmi PDF", "Format berita acara falak"),
         ]
 
-        for title, sub in features:
+        for idx, (title, sub) in enumerate(features):
             box = QFrame()
             box.setStyleSheet("""
                 background-color: rgba(255, 255, 255, 0.03);
                 border: 1px solid #1e2634;
                 border-radius: 10px;
-                padding: 10px 14px;
+                padding: 8px 12px;
             """)
             box_l = QVBoxLayout(box)
             box_l.setSpacing(2)
             t_lbl = QLabel(title)
-            t_lbl.setStyleSheet("color: #e2e8f0; font-weight: bold; font-size: 12px;")
+            t_lbl.setStyleSheet("color: #e2e8f0; font-weight: bold; font-size: 11px;")
             s_lbl = QLabel(sub)
-            s_lbl.setStyleSheet("color: #64748b; font-size: 11px;")
+            s_lbl.setStyleSheet("color: #64748b; font-size: 10px;")
             box_l.addWidget(t_lbl)
             box_l.addWidget(s_lbl)
-            info_layout.addWidget(box)
+            info_layout.addWidget(box, 0, idx)
 
-        card_layout.addSpacing(10)
+        card_layout.addSpacing(6)
         card_layout.addLayout(info_layout)
 
-        main_layout.addWidget(card)
+        scroll_layout.addWidget(card)
+        scroll_area.setWidget(scroll_widget)
+        main_layout.addWidget(scroll_area)

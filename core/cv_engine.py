@@ -109,20 +109,53 @@ class HorizonDetector:
         horizon_y = np.full(w, int(h * 0.5), dtype=np.int32)
 
         if method == self.METHOD_GRADIENT:
-            # Algoritma Dynamic Programming (DP) Skyline Extraction
-            # Normalisasi kolom + penalti diskontinuitas kuadratik
-            # Bebas dari lonjakan palsu ke langit (overcast) maupun kebocoran ke sawah/jalan
-            sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=5)
+            # Algoritma Multi-Spectral OpenCV + Dynamic Programming (DP) Skyline Extraction
+            # 1. Konversi ke ruang warna Lab untuk mengekstraksi Luminance (L) dan opponent color b*
+            #    (langit senja memiliki pendaran kuning keemasan kuat pada kanal b*, sedangkan daratan/bukit gelap)
+            lab = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB)
+            l_chan = lab[:, :, 0]
+            b_chan = lab[:, :, 2]
+
             sign = -1.0 if not invert_mask else 1.0
-            grad = sign * sobel_y[y_min:y_max, :]
-            grad_pos = np.clip(grad, 0, None)
 
-            # Normalisasi per kolom untuk menjaga sensitivitas kontras lokal
-            col_max = np.max(grad_pos, axis=0, keepdims=True)
-            col_max[col_max == 0] = 1.0
-            grad_norm = grad_pos / col_max
+            # Hitung gradien vertikal OpenCV Sobel ksize=5
+            sobel_l = cv2.Sobel(l_chan, cv2.CV_64F, 0, 1, ksize=5)
+            sobel_gray = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=5)
+            sobel_b = cv2.Sobel(b_chan, cv2.CV_64F, 0, 1, ksize=5)
 
-            cost = 1.0 - grad_norm
+            gl_pos = np.clip(sign * sobel_l[y_min:y_max, :], 0, None)
+            gg_pos = np.clip(sign * sobel_gray[y_min:y_max, :], 0, None)
+            gb_pos = np.clip(sign * sobel_b[y_min:y_max, :], 0, None)
+
+            # 2. Filter Step-Edge Vertikal OpenCV untuk menekan rumbai awan tipis (cloud bands)
+            k_size = 17
+            k_half = k_size // 2
+            step_kernel = np.zeros((k_size, 1), dtype=np.float64)
+            step_kernel[:k_half, 0] = sign / float(k_half)
+            step_kernel[k_half + 1:, 0] = -sign / float(k_half)
+            step_resp = cv2.filter2D(gray.astype(np.float64), -1, step_kernel)[y_min:y_max, :]
+            step_pos = np.clip(step_resp, 0, None)
+
+            # Normalisasi robust setiap komponen sebelum fusi
+            def _norm_energy(mat: np.ndarray) -> np.ndarray:
+                p995 = float(np.percentile(mat, 99.5))
+                return mat / p995 if p995 > 1e-4 else np.zeros_like(mat)
+
+            e_l = _norm_energy(gl_pos)
+            e_gray = _norm_energy(gg_pos)
+            e_b = _norm_energy(gb_pos)
+            e_step = _norm_energy(step_pos)
+
+            # Fusi energi multi-spektral astronomis
+            energy = 0.35 * e_l + 0.25 * e_gray + 0.25 * e_b + 0.15 * e_step
+
+            # 3. Normalisasi kolom dengan Global Floor untuk mencegah amplifikasi noise pada kolom berkabut
+            p99_e = float(np.percentile(energy, 99.5))
+            global_floor = max(0.15 * p99_e, 1e-4)
+            col_max = np.maximum(np.max(energy, axis=0, keepdims=True), global_floor)
+            energy_norm = energy / col_max
+
+            cost = 1.0 - energy_norm
             roi_h = y_max - y_min
 
             dp = np.zeros((roi_h, w), dtype=np.float32)
@@ -130,13 +163,17 @@ class HorizonDetector:
             dp[:, 0] = cost[:, 0]
 
             max_jump = max(4, int(roi_h * 0.04))
-            jump_penalty = 0.5
+            jump_idx = np.arange(-max_jump, max_jump + 1)
+            jump_penalty_kernel = 0.03 * (jump_idx ** 2)
 
             for x in range(1, w):
                 for y in range(roi_h):
                     y_start = max(0, y - max_jump)
                     y_end = min(roi_h, y + max_jump + 1)
-                    prev_costs = dp[y_start:y_end, x - 1] + jump_penalty * (np.abs(np.arange(y_start, y_end) - y) ** 1.2)
+                    k_s = y_start - (y - max_jump)
+                    k_e = k_s + (y_end - y_start)
+
+                    prev_costs = dp[y_start:y_end, x - 1] + jump_penalty_kernel[k_s:k_e]
                     min_idx = int(np.argmin(prev_costs))
                     dp[y, x] = cost[y, x] + prev_costs[min_idx]
                     parent[y, x] = y_start + min_idx
@@ -146,9 +183,21 @@ class HorizonDetector:
             for x in range(w - 2, -1, -1):
                 horizon_roi[x] = parent[horizon_roi[x + 1], x + 1]
 
-            horizon_y = y_min + horizon_roi
+            # 4. Interpolasi Puncak Parabolik Sub-Piksel (3-Point Parabolic Peak Interpolation)
+            # Menghilangkan efek kuantisasi undakan tangga (stair-stepping) pada elevasi sudut astronomi
+            subpixel_roi = horizon_roi.astype(np.float64)
             for x in range(w):
-                mask[horizon_y[x]:, x] = 255
+                y_pk = horizon_roi[x]
+                if 1 <= y_pk < roi_h - 1:
+                    e_prev = float(energy[y_pk - 1, x])
+                    e_curr = float(energy[y_pk, x])
+                    e_next = float(energy[y_pk + 1, x])
+                    denom = 2.0 * (2.0 * e_curr - e_prev - e_next)
+                    if abs(denom) > 1e-5:
+                        delta_pk = (e_prev - e_next) / denom
+                        subpixel_roi[x] += np.clip(delta_pk, -0.5, 0.5)
+
+            raw_horizon_y = y_min + subpixel_roi
 
         elif method == self.METHOD_CANNY:
             # Metode Canny Edge + Pencarian Kontur Teratas
@@ -162,19 +211,15 @@ class HorizonDetector:
             closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_close)
 
             # Temukan tepi pertama dari atas di dalam rentang ROI
+            col_y = np.full(w, int(h * 0.55), dtype=np.float64)
             for x in range(w):
                 col_edges = np.where(closed[y_min:y_max, x] > 0)[0]
                 if len(col_edges) > 0:
-                    horizon_y[x] = y_min + col_edges[0]
-                else:
-                    # Fallback ke baris rata-rata
-                    horizon_y[x] = int(h * 0.55)
-                mask[horizon_y[x]:, x] = 255
+                    col_y[x] = y_min + col_edges[0]
+            raw_horizon_y = col_y
 
         else:
             # METHOD_OTSU: Adaptive Thresholding
-            # Pisahkan langit di bagian atas dan daratan di bagian bawah
-            # Hitung threshold lokal atau Otsu pada wilayah pencarian
             roi_gray = gray[y_min:y_max, :]
             otsu_val, _ = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             target_thresh = int(np.clip(otsu_val + threshold_offset, 10, 245))
@@ -188,24 +233,29 @@ class HorizonDetector:
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 5))
             cleaned_mask = cv2.morphologyEx(raw_mask, cv2.MORPH_CLOSE, kernel)
 
-            # Ambil piksel daratan teratas di dalam ROI
+            col_y = np.full(w, float(y_max), dtype=np.float64)
             for x in range(w):
                 col = cleaned_mask[y_min:y_max, x]
                 ground_idxs = np.where(col > 0)[0]
                 if len(ground_idxs) > 0:
-                    horizon_y[x] = y_min + ground_idxs[0]
-                else:
-                    horizon_y[x] = y_max
-                mask[horizon_y[x]:, x] = 255
+                    col_y[x] = y_min + ground_idxs[0]
+            raw_horizon_y = col_y
 
         # Smoothing kontur untuk membuang artefak tajam/noise kabel tanpa mengubah lekuk bukit
         sw = max(3, smooth_window | 1)
-        if sw >= 3 and len(horizon_y) > sw:
+        if sw >= 3 and len(raw_horizon_y) > sw:
             # Menggunakan boundary mode 'nearest' agar tepi kiri dan kanan tidak loncat/anjlok
             from scipy.ndimage import median_filter, uniform_filter1d
-            horizon_y = median_filter(horizon_y.astype(np.float64), size=sw, mode="nearest")
-            smoothed = uniform_filter1d(horizon_y, size=5, mode="nearest")
-            horizon_y = np.clip(smoothed, y_min, y_max).astype(np.int32)
+            filtered = median_filter(raw_horizon_y, size=sw, mode="nearest")
+            smoothed = uniform_filter1d(filtered, size=5, mode="nearest")
+            horizon_y = np.clip(smoothed, float(y_min), float(y_max))
+        else:
+            horizon_y = raw_horizon_y
+
+        # Buat mask biner tanah/halangan
+        int_y = np.clip(np.round(horizon_y).astype(np.int32), 0, h - 1)
+        for x in range(w):
+            mask[int_y[x]:, x] = 255
 
         self.last_horizon_y = horizon_y
         return horizon_y, mask
@@ -225,7 +275,7 @@ class HorizonDetector:
         Menghitung profil sudut (Azimut dan Elevasi) lengkap dari array horizon_y.
         """
         x_indices = np.arange(img_w)
-        azimuths, elevations = pixel_to_azimuth_elevation(
+        az_raw, el_raw = pixel_to_azimuth_elevation(
             x=x_indices,
             y=horizon_y,
             img_w=img_w,
@@ -235,6 +285,8 @@ class HorizonDetector:
             vfov=vfov,
             tilt_center=tilt_center,
         )
+        azimuths = np.asarray(az_raw, dtype=np.float64)
+        elevations = np.asarray(el_raw, dtype=np.float64)
 
         dip_deg, dip_arcmin = calculate_dip(elevation_m)
 
@@ -338,7 +390,10 @@ class HorizonDetector:
         line_thick = max(3, int(round(w / 350.0)))
         outline_thick = line_thick + max(2, int(line_thick * 0.6))
 
-        pts = np.column_stack((np.arange(w), horizon_y)).reshape((-1, 1, 2))
+        pts = np.column_stack((
+            np.arange(w),
+            np.clip(np.round(horizon_y).astype(np.int32), 0, h - 1)
+        )).reshape((-1, 1, 2))
         # Garis outline hitam agar kontras di latar langit terang/awan
         cv2.polylines(canvas, [pts], isClosed=False, color=(0, 0, 0), thickness=outline_thick, lineType=cv2.LINE_AA)
         # Garis kontur kuning neon terang
@@ -346,7 +401,8 @@ class HorizonDetector:
 
         # 4. Kursor Azimut Sasaran (Target Azimuth Line & Marker)
         if target_x is not None and 0 <= target_x < w:
-            ty = horizon_y[target_x] if target_y is None else target_y
+            raw_ty = horizon_y[target_x] if target_y is None else target_y
+            ty = int(round(raw_ty))
             cv2.line(canvas, (target_x, 0), (target_x, h - 1), (0, 0, 255), 2, cv2.LINE_AA)
             cv2.circle(canvas, (target_x, ty), 6, (0, 0, 255), -1, cv2.LINE_AA)
             cv2.circle(canvas, (target_x, ty), 11, (255, 255, 255), 2, cv2.LINE_AA)

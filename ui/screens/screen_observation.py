@@ -124,8 +124,20 @@ class ScreenObservation(QWidget):
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(16, 12, 16, 12)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        scroll_content = QWidget()
+        content_layout = QVBoxLayout(scroll_content)
+        content_layout.setContentsMargins(16, 12, 16, 12)
+        content_layout.setSpacing(10)
 
         # ==========================================
         # 1. HUD SENSOR DI ATAS
@@ -254,7 +266,7 @@ class ScreenObservation(QWidget):
         data_bar.addWidget(gps_box, stretch=2)
         hud_layout.addLayout(data_bar)
 
-        main_layout.addWidget(hud_container)
+        content_layout.addWidget(hud_container)
 
         # ==========================================
         # 2. VIEWPORT CITRA / LIVE STREAM
@@ -262,9 +274,9 @@ class ScreenObservation(QWidget):
         self.image_viewer = InteractiveImageViewer(
             placeholder_text="Kamera Siap. Silakan Ambil Foto atau Muat Gambar."
         )
-        self.image_viewer.setMinimumHeight(320)
+        self.image_viewer.setMinimumHeight(240)
         self.image_viewer.set_crosshair(True, is_locked=True)
-        main_layout.addWidget(self.image_viewer, stretch=4)
+        content_layout.addWidget(self.image_viewer, stretch=4)
 
         # Kontrol Kamera & Ambil Foto
         cam_bar = QHBoxLayout()
@@ -327,7 +339,7 @@ class ScreenObservation(QWidget):
         self.lbl_photo_status.setStyleSheet("color: #10b981; font-weight: bold; font-size: 12px;")
         cam_bar.addWidget(self.lbl_photo_status)
 
-        main_layout.addLayout(cam_bar)
+        content_layout.addLayout(cam_bar)
 
         # ==========================================
         # 3. PREVIEW STRIP (SLOT HINGGA 3 FOTO) & TOMBOL PROSES
@@ -368,18 +380,21 @@ class ScreenObservation(QWidget):
             self.thumb_labels.append(lbl)
             bottom_layout.addWidget(lbl)
 
-        btn_reset_photos = QPushButton("🗑️ Reset")
-        btn_reset_photos.setToolTip("Hapus daftar foto")
-        btn_reset_photos.setStyleSheet("""
+        self.btn_delete_photo = QPushButton("🗑️ Hapus")
+        self.btn_delete_photo.setToolTip("Hapus foto pada slot yang dipilih")
+        self.btn_delete_photo.setStyleSheet("""
             QPushButton {
                 background-color: #1e2634; color: #ef4444;
                 border: 1px solid #334155; border-radius: 6px;
-                padding: 6px 10px; font-size: 11px;
+                padding: 6px 12px; font-size: 11px;
+                font-weight: bold;
             }
-            QPushButton:hover { background-color: #2b1f24; }
+            QPushButton:hover { background-color: #2b1f24; border-color: #ef4444; }
+            QPushButton:disabled { color: #475569; border-color: #1e2634; }
         """)
-        btn_reset_photos.clicked.connect(self._clear_photos)
-        bottom_layout.addWidget(btn_reset_photos)
+        self.btn_delete_photo.clicked.connect(self._delete_selected_slot)
+        self.btn_reset_photos = self.btn_delete_photo  # alias kompatibilitas
+        bottom_layout.addWidget(self.btn_delete_photo)
 
         bottom_layout.addStretch()
 
@@ -409,7 +424,9 @@ class ScreenObservation(QWidget):
         self.btn_proceed.clicked.connect(self._process_and_proceed)
         bottom_layout.addWidget(self.btn_proceed)
 
-        main_layout.addWidget(bottom_bar)
+        content_layout.addWidget(bottom_bar)
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area)
 
     def _create_hud_card(self, title: str, value: str, val_color: str) -> QFrame:
         """Membuat kotak tampilan data HUD sensor."""
@@ -495,7 +512,7 @@ class ScreenObservation(QWidget):
             return
 
         if len(self.captured_images) >= 3:
-            QMessageBox.warning(self, "Batas Foto", "Maksimal 3 foto tercapai. Silakan reset jika ingin mengganti.")
+            QMessageBox.warning(self, "Batas Foto", "Maksimal 3 foto tercapai. Silakan hapus foto pada slot yang ingin diganti.")
             return
 
         self._add_captured_image(frame)
@@ -549,8 +566,35 @@ class ScreenObservation(QWidget):
             self._update_thumbnails()
             self.image_viewer.set_cv_image(self._get_display_variant(self.captured_images[index]))
 
+    def _delete_selected_slot(self):
+        """Menghapus foto pada slot yang sedang dipilih."""
+        if not self.captured_images:
+            QMessageBox.information(self, "Informasi", "Belum ada foto dalam slot untuk dihapus.")
+            return
+
+        if self.selected_image_index < 0 or self.selected_image_index >= len(self.captured_images):
+            QMessageBox.information(self, "Pilih Slot", "Silakan klik salah satu slot foto yang ingin dihapus terlebih dahulu.")
+            return
+
+        # Hapus foto dari slot yang dipilih
+        del self.captured_images[self.selected_image_index]
+
+        if len(self.captured_images) > 0:
+            # Tetap pada indeks yang sama jika masih ada, atau ke slot terakhir yang tersedia
+            self.selected_image_index = min(self.selected_image_index, len(self.captured_images) - 1)
+            self.image_viewer.set_cv_image(self._get_display_variant(self.captured_images[self.selected_image_index]))
+            self.lbl_photo_status.setText(f"{len(self.captured_images)} Foto Siap Diproses")
+            self.btn_proceed.setEnabled(True)
+        else:
+            self.selected_image_index = -1
+            self.image_viewer.set_cv_image(None)
+            self.lbl_photo_status.setText("Belum ada foto")
+            self.btn_proceed.setEnabled(False)
+
+        self._update_thumbnails()
+
     def _clear_photos(self):
-        """Mereset buffer foto."""
+        """Mereset buffer semua foto."""
         self.captured_images.clear()
         self.selected_image_index = -1
         self._update_thumbnails()
@@ -559,7 +603,7 @@ class ScreenObservation(QWidget):
         self.btn_proceed.setEnabled(False)
 
     def _update_thumbnails(self):
-        """Memperbarui visual thumbnail preview."""
+        """Memperbarui visual thumbnail preview dan status tombol hapus."""
         for i, lbl in enumerate(self.thumb_labels):
             if i < len(self.captured_images):
                 img = self.captured_images[i]
@@ -570,9 +614,9 @@ class ScreenObservation(QWidget):
                 lbl.setPixmap(pix)
 
                 if i == self.selected_image_index:
-                    lbl.setStyleSheet("border: 2px solid #10b981; border-radius: 8px;")
+                    lbl.setStyleSheet("border: 2px solid #10b981; border-radius: 8px; background-color: #122822;")
                 else:
-                    lbl.setStyleSheet("border: 1px solid #475569; border-radius: 8px;")
+                    lbl.setStyleSheet("border: 1px solid #475569; border-radius: 8px; background-color: #18202d;")
             else:
                 lbl.clear()
                 lbl.setText(f"Slot {i+1}")
@@ -583,6 +627,9 @@ class ScreenObservation(QWidget):
                     color: #475569;
                     font-size: 11px;
                 """)
+
+        if hasattr(self, "btn_delete_photo"):
+            self.btn_delete_photo.setEnabled(len(self.captured_images) > 0 and self.selected_image_index >= 0)
 
     def build_observation_package(self) -> Optional[dict]:
         """Mengekstrak kontur dan menyusun paket data pengamatan dari foto aktif."""
