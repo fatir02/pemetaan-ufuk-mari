@@ -25,7 +25,7 @@ class InteractiveImageViewer(QLabel):
         self.placeholder_text = placeholder_text
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAlignment(Qt.AlignCenter)
-        self.setMinimumSize(320, 200)
+        self.setMinimumSize(280, 160)
         self.setStyleSheet("""
             QLabel {
                 background-color: #0d0f12;

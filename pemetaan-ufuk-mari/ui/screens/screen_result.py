@@ -112,7 +112,7 @@ class ScreenResult(QWidget):
         left_layout.addWidget(lbl_foto_title)
 
         self.image_viewer = InteractiveImageViewer(placeholder_text="Menunggu Data Hasil...")
-        self.image_viewer.setMinimumHeight(240)
+        self.image_viewer.setMinimumHeight(180)
         left_layout.addWidget(self.image_viewer, stretch=3)
 
         # Kartu Data Numerik Terukur
@@ -153,7 +153,7 @@ class ScreenResult(QWidget):
         right_layout.addWidget(lbl_chart_title)
 
         self.plot_canvas = HorizonPlotCanvas(self, width=6, height=3)
-        self.plot_canvas.setMinimumHeight(240)
+        self.plot_canvas.setMinimumHeight(180)
         self.plot_canvas.azimuth_clicked.connect(self._on_plot_azimuth_clicked)
         right_layout.addWidget(self.plot_canvas, stretch=3)
 
