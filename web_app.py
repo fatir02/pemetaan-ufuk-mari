@@ -459,12 +459,15 @@ HTML_TEMPLATE = """
     let lastHudDrawTime = 0;
     let clientProfileCurve = null;
 
+    // Tampilkan foto langsung ke preview saat dipilih, dan kompresi latar belakang
     function compressAndSetImage(file, statusText) {
-      document.getElementById('loadingText').innerText = "Mengompresi foto untuk respon kilat...";
-      document.getElementById('loading').style.display = 'block';
-
       const reader = new FileReader();
       reader.onload = function(e) {
+        const dataUrl = e.target.result;
+        selectedImageBase64 = dataUrl;
+        displayLoadedImage(dataUrl, statusText);
+
+        // Kompresi latar belakang jika resolusi foto sangat besar (misal 12-48 MP kamera HP)
         const img = new Image();
         img.onload = function() {
           let w = img.width;
@@ -478,17 +481,15 @@ HTML_TEMPLATE = """
               w = Math.round((w * maxDim) / h);
               h = maxDim;
             }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            selectedImageBase64 = canvas.toDataURL('image/jpeg', 0.86);
           }
-          const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, w, h);
-          selectedImageBase64 = canvas.toDataURL('image/jpeg', 0.86);
-          document.getElementById('loading').style.display = 'none';
-          displayLoadedImage(selectedImageBase64, statusText);
         };
-        img.src = e.target.result;
+        img.src = dataUrl;
       };
       reader.readAsDataURL(file);
     }
@@ -497,6 +498,7 @@ HTML_TEMPLATE = """
       if (input.files && input.files[0]) {
         const sourceName = input.id === 'galleryInput' ? 'Galeri HP' : 'Kamera HP';
         compressAndSetImage(input.files[0], "Foto siap dari " + sourceName);
+        input.value = "";
       }
     }
 
@@ -504,6 +506,8 @@ HTML_TEMPLATE = """
       const preview = document.getElementById('rawPreview');
       preview.src = b64;
       preview.style.display = 'block';
+      const dropArea = document.getElementById('dropArea');
+      if (dropArea) dropArea.classList.add('active');
       document.getElementById('lblPhotoStatus').innerText = statusText || "Foto Terpilih";
       document.getElementById('lblPhotoStatus').style.color = "#10b981";
       stopLiveCamera();
@@ -515,6 +519,9 @@ HTML_TEMPLATE = """
         .then(data => {
           selectedImageBase64 = data.image_base64;
           displayLoadedImage(selectedImageBase64, "Foto contoh lanskap ufuk terpasang");
+        })
+        .catch(err => {
+          alert("Gagal memuat contoh foto: " + err.message);
         });
     }
 
@@ -539,7 +546,7 @@ HTML_TEMPLATE = """
           drawLiveHudLoop();
         };
       } catch (err) {
-        alert("Tidak dapat membuka kamera browser: " + err.message + "\nSilakan gunakan tombol 'Jepret Kamera HP' sebagai alternatif.");
+        alert("Tidak dapat membuka kamera browser: " + err.message + ". Silakan gunakan tombol 'Jepret Kamera HP' sebagai alternatif.");
         wrapper.style.display = 'none';
       }
     }
